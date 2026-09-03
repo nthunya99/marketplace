@@ -1,81 +1,65 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-export default function SupportPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Hi! Ask me about your orders, returns, or how the marketplace works." },
-  ]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [notConfigured, setNotConfigured] = useState(false);
-
-  async function send(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim()) return;
-    const next: ChatMessage[] = [...messages, { role: "user", content: input }];
-    setMessages(next);
-    setInput("");
-    setSending(true);
+    setLoading(true);
+    setError("");
 
-    const res = await fetch("/api/ai/support", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: next.filter((m) => m.role === "user" || m.role === "assistant") }),
+    const res = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
     });
-    const data = await res.json();
-    setSending(false);
 
-    if (!res.ok) {
-      setMessages([...next, { role: "assistant", content: data.error ?? "Something went wrong." }]);
+    setLoading(false);
+
+    if (res?.error) {
+      setError("Invalid email or password.");
       return;
     }
-    if (data.configured === false) setNotConfigured(true);
-    setMessages([...next, { role: "assistant", content: data.reply }]);
+    router.push("/");
   }
 
   return (
-    <div className="max-w-xl">
-      <h1 className="font-display text-2xl text-ink mb-2">Support</h1>
-      <p className="text-sm text-ink-muted mb-4">
-        AI-assisted support, grounded in your real order history — it won't invent order details it
-        doesn't have.
-      </p>
-      {notConfigured && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-4">
-          AI support isn't fully configured on this deployment yet.
+    <div className="max-w-sm mx-auto">
+      <h1 className="font-display text-2xl text-ink mb-4">Log in</h1>
+      {error && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
+          {error}
         </p>
       )}
-
-      <div className="card flex flex-col h-[60vh]">
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
-                  m.role === "user" ? "bg-brand text-white" : "bg-ink/[0.06]"
-                }`}
-              >
-                {m.content}
-              </div>
-            </div>
-          ))}
-          {sending && <p className="text-xs text-ink-faint">Thinking…</p>}
-        </div>
-        <form onSubmit={send} className="border-t p-3 flex gap-2">
-          <input
-            className="input"
-            placeholder="Ask a question…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-          <button className="btn-primary" disabled={sending}>
-            Send
-          </button>
-        </form>
-      </div>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input
+          type="email"
+          className="input w-full"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          className="input w-full"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <button className="btn-primary w-full" disabled={loading}>
+          {loading ? "Logging in…" : "Log in"}
+        </button>
+      </form>
     </div>
   );
 }
