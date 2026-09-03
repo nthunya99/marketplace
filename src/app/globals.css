@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  overflow-x: hidden;
+}
+
+::selection {
+  background-color: theme("colors.accent.light");
+  color: theme("colors.brand.dark");
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}
+
+@layer components {
+  /* ---- Buttons ---- */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 bg-brand text-white rounded-lg px-4 py-2.5 font-medium
+      transition-colors duration-150 hover:bg-brand-dark
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 bg-white text-ink border border-ink/15 rounded-lg px-4 py-2.5 font-medium
+      transition-colors duration-150 hover:border-ink/30 hover:bg-ink/[0.02]
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-1.5 bg-accent text-white rounded-lg px-4 py-2.5 font-medium
+      transition-colors duration-150 hover:bg-accent-dark
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* ---- Cards ---- */
+  .card {
+    @apply bg-white rounded-xl border border-ink/10 shadow-card;
+  }
+
+  /* Product card: the one place hover motion is used deliberately —
+     a slight lift plus image zoom, nothing else on the page animates
+     on hover. */
+  .product-card {
+    @apply card overflow-hidden transition-shadow duration-200 hover:shadow-card-hover;
+  }
+  .product-card img {
+    @apply transition-transform duration-300;
+  }
+  .product-card:hover img {
+    transform: scale(1.04);
+  }
+
+  /* ---- Form controls ---- */
+  .input {
+    /* text-base (16px) keeps iOS Safari from auto-zooming the page when
+       an input is focused. */
+    @apply w-full bg-white border border-ink/15 rounded-lg px-3 py-2.5 text-base text-ink placeholder:text-ink-faint
+      focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-shadow;
+  }
+
+  /* ---- Badges & chips ---- */
+  .badge {
+    @apply inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-neutral {
+    @apply badge bg-ink/[0.06] text-ink-muted;
+  }
+  .badge-brand {
+    @apply badge bg-brand-light text-brand-dark;
+  }
+  .badge-accent {
+    @apply badge bg-accent-light text-accent-dark;
+  }
+
+  /* Pill-shaped filter/category chip. Selected state uses brand fill;
+     resting state is an outline so a long row of chips doesn't read as
+     a wall of solid color. */
+  .chip {
+    @apply inline-flex items-center whitespace-nowrap px-3.5 py-1.5 rounded-full text-sm font-medium border
+      border-ink/15 text-ink-muted bg-white transition-colors duration-150 hover:border-brand/40 hover:text-brand-dark;
+  }
+  .chip-active {
+    @apply chip bg-brand border-brand text-white hover:text-white hover:border-brand;
+  }
+
+  /* Reusable pattern for list rows (admin/vendor tables-as-cards) that
+     hold several inline action buttons: stack vertically on narrow
+     screens, go horizontal from the sm breakpoint up. */
+  .list-row {
+    @apply flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4;
+  }
+}
