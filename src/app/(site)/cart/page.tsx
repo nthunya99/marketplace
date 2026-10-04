@@ -112,9 +112,7 @@ export default function CartPage() {
           <span>Subtotal</span>
           <span className="font-semibold">{subtotal}</span>
         </div>
-        <p className="text-xs text-ink-faint mb-4">
-          Shipping and taxes are calculated at checkout.
-        </p>
+        <p className="text-xs text-ink-faint mb-4">Taxes, if any, are calculated at checkout.</p>
         <Link href="/checkout" className="btn-primary w-full block text-center">
           Proceed to checkout
         </Link>

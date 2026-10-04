@@ -19,6 +19,26 @@ const config: Config = {
           dark: "#C56A1A",
           light: "#FDEEDD",
         },
+        // Supporting colors for a busier, department-store-style layout:
+        // a hot deal-red for sale/clearance badges, a trust-blue for
+        // verified/buyer-protection messaging, and a sunny yellow for
+        // promo ribbons — used deliberately in small, high-energy spots
+        // (badges, ribbons, the promo rail) rather than as page washes.
+        sale: {
+          DEFAULT: "#E23744",
+          dark: "#C22530",
+          light: "#FCE8E9",
+        },
+        trust: {
+          DEFAULT: "#1D6FD6",
+          dark: "#15529f",
+          light: "#E7F0FC",
+        },
+        sun: {
+          DEFAULT: "#F4B400",
+          dark: "#C98F00",
+          light: "#FFF6DD",
+        },
         // Warm neutrals instead of cold Tailwind gray — paper background,
         // ink text.
         paper: "#FAF8F3",
@@ -34,8 +54,7 @@ const config: Config = {
       },
       boxShadow: {
         card: "0 1px 2px rgba(23, 26, 23, 0.04), 0 8px 20px -8px rgba(23, 26, 23, 0.10)",
-        "card-hover":
-          "0 4px 10px rgba(23, 26, 23, 0.06), 0 16px 32px -12px rgba(23, 26, 23, 0.16)",
+        "card-hover": "0 4px 10px rgba(23, 26, 23, 0.06), 0 16px 32px -12px rgba(23, 26, 23, 0.16)",
       },
     },
   },

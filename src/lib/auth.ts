@@ -3,6 +3,8 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
 import { verifyPassword } from "./auth-utils";
 
+const TOKEN_REFRESH_MS = 5 * 60 * 1000;
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
@@ -41,21 +43,59 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    /**
+     * The JWT is the session. Role and vendor details are copied into it at
+     * login, so without a refresh they go stale: a customer who becomes a
+     * vendor, a vendor who gets approved or suspended, or a deleted account
+     * would keep their old access until they log out. So the token is
+     * re-read from the database every few minutes (and immediately when
+     * the client calls update()). This runs whenever the session is read
+     * through NextAuth (useSession, getServerSession), not in middleware.
+     */
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role;
         token.vendorStatus = (user as any).vendorStatus;
         token.vendorId = (user as any).vendorId;
+        token.refreshedAt = Date.now();
+        return token;
+      }
+      if (token.revoked || !token.id) return token;
+
+      const stale = !token.refreshedAt || Date.now() - token.refreshedAt > TOKEN_REFRESH_MS;
+      if (trigger === "update" || stale) {
+        const fresh = await prisma.user.findUnique({
+          where: { id: token.id },
+          select: { name: true, email: true, role: true, vendorProfile: { select: { id: true, status: true } } },
+        });
+        if (!fresh) {
+          // Account no longer exists: treat the session as signed out.
+          token.revoked = true;
+          return token;
+        }
+        token.name = fresh.name;
+        token.email = fresh.email;
+        token.role = fresh.role;
+        token.vendorStatus = fresh.vendorProfile?.status ?? null;
+        token.vendorId = fresh.vendorProfile?.id ?? null;
+        token.refreshedAt = Date.now();
       }
       return token;
     },
     async session({ session, token }) {
+      if (token.revoked) {
+        // No user on the session = signed out everywhere (requireUser → 401,
+        // useSession → unauthenticated).
+        return { ...session, user: undefined } as unknown as typeof session;
+      }
       if (session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
         (session.user as any).vendorStatus = token.vendorStatus;
         (session.user as any).vendorId = token.vendorId;
+        if (token.name) session.user.name = token.name;
+        if (token.email) session.user.email = token.email;
       }
       return session;
     },

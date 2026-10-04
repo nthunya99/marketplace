@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useCartCounts } from "@/components/CartCountProvider";
 
 type Variant = { id: string; sku: string; optionsJson: Record<string, string>; price: string; stockQuantity: number };
 type ProductDetail = {
@@ -40,8 +41,10 @@ export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { data: session } = useSession();
+  const { refreshCounts } = useCartCounts();
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<string>("");
+  const [activeImage, setActiveImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -55,7 +58,10 @@ export default function ProductDetailPage() {
   useEffect(() => {
     fetch(`/api/products/${params.id}`)
       .then((r) => r.json())
-      .then(setProduct);
+      .then((p) => {
+        setProduct(p);
+        setActiveImage(0);
+      });
   }, [params.id]);
 
   function loadReviews() {
@@ -101,22 +107,13 @@ export default function ProductDetailPage() {
       body: JSON.stringify({ productId: product!.id }),
     });
     setMessage(res.ok ? "Added to wishlist." : "Could not add to wishlist.");
+    refreshCounts();
   }
 
-  async function messageSeller() {
-    if (!session?.user) {
-      router.push("/login");
-      return;
-    }
-    if (session.user.role !== "CUSTOMER") return;
-    const res = await fetch("/api/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorId: product!.vendor.id, productId: product!.id }),
-    });
-    const data = await res.json();
-    if (res.ok) router.push(`/messages/${data.id}`);
-  }
+  // Messaging a seller now happens from a confirmed order (see the order
+  // detail page), not from here — a customer can only start a
+  // conversation once they've actually bought something from this
+  // vendor, so there's no "message seller" action on the product page.
 
   async function submitReview(e: React.FormEvent) {
     e.preventDefault();
@@ -169,18 +166,40 @@ export default function ProductDetailPage() {
       setMessage(data.error ?? "Could not add to cart.");
     } else {
       setMessage("Added to cart.");
+      refreshCounts();
     }
   }
 
   return (
     <div className="grid md:grid-cols-2 gap-8 sm:gap-10">
-      <div className="aspect-square bg-ink/[0.04] rounded-xl overflow-hidden relative">
-        {product.images[0] && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={product.images[0].url} alt={product.name} className="w-full h-full object-cover" />
-        )}
-        {pct > 0 && (
-          <span className="absolute top-3 left-3 badge-accent bg-accent text-white shadow-sm">−{pct}%</span>
+      <div>
+        <div className="aspect-square bg-ink/[0.04] rounded-xl overflow-hidden relative">
+          {product.images[activeImage] && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={product.images[activeImage].url} alt={product.name} className="w-full h-full object-cover" />
+          )}
+          {pct > 0 && (
+            <span className="absolute top-3 left-3 badge-accent bg-accent text-white shadow-sm">−{pct}%</span>
+          )}
+        </div>
+        {product.images.length > 1 && (
+          <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+            {product.images.map((img, i) => (
+              <button
+                key={img.url}
+                type="button"
+                onClick={() => setActiveImage(i)}
+                aria-label={`Show photo ${i + 1}`}
+                aria-current={i === activeImage}
+                className={`w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${
+                  i === activeImage ? "border-brand" : "border-transparent hover:border-ink/20"
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.url} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
         )}
       </div>
       <div>
@@ -246,11 +265,6 @@ export default function ProductDetailPage() {
           <button className="btn-secondary" onClick={addToWishlist}>
             ♡ Wishlist
           </button>
-          {session?.user?.role !== "VENDOR" && session?.user?.role !== "ADMIN" && (
-            <button className="btn-secondary" onClick={messageSeller}>
-              Message seller
-            </button>
-          )}
         </div>
         {message && <p className="mt-2 text-sm text-ink-muted">{message}</p>}
 

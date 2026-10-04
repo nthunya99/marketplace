@@ -7,6 +7,7 @@ type CartItem = {
   id: string;
   name: string;
   vendorName: string;
+  vendorTakesPayment: boolean;
   quantity: number;
   lineTotal: string;
 };
@@ -46,6 +47,13 @@ export default function CheckoutPage() {
     (acc[item.vendorName] ??= []).push(item);
     return acc;
   }, {});
+
+  // Sellers who can't take payment right now — checkout would refuse the
+  // order, so say so up front instead of after "Place order".
+  const unpayableSellers = Object.entries(vendorGroups)
+    .filter(([, vendorItems]) => vendorItems.some((i) => !i.vendorTakesPayment))
+    .map(([vendorName]) => vendorName);
+  const sellerCount = Object.keys(vendorGroups).length;
 
   async function applyCoupon() {
     setCouponError(null);
@@ -171,14 +179,26 @@ export default function CheckoutPage() {
           <span>{estimatedTotal.toFixed(2)}</span>
         </div>
         <p className="text-xs text-ink-muted mt-1">
-          Final total (including shipping) is confirmed on the next step.
+          Nothing is charged yet. After you place your order, you'll choose how to pay{" "}
+          {sellerCount > 1 ? "each seller" : "the seller"} from the options they offer.
         </p>
       </div>
 
+      {unpayableSellers.length > 0 && (
+        <div className="rounded-lg border border-sale/30 bg-sale-light px-4 py-3 text-sm text-sale-dark mb-4">
+          {unpayableSellers.join(", ")} {unpayableSellers.length > 1 ? "aren't" : "isn't"} taking payments right now.
+          Remove their items from your cart to place this order.
+        </div>
+      )}
+
       {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
-      <button className="btn-primary w-full" onClick={placeOrder} disabled={placing}>
-        {placing ? "Placing order…" : "Place order & pay"}
+      <button
+        className="btn-primary w-full"
+        onClick={placeOrder}
+        disabled={placing || unpayableSellers.length > 0}
+      >
+        {placing ? "Placing order…" : "Place order"}
       </button>
     </div>
   );

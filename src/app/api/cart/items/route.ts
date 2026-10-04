@@ -38,13 +38,17 @@ export async function POST(req: NextRequest) {
       create: { userId: user.id },
     });
 
-    const existingItem = await prisma.cartItem.findUnique({
+    // Prisma's compound-unique selector (cartId_productId_variantId)
+    // rejects an explicit `null` for the nullable variantId field at
+    // runtime, even though null is exactly what "no variant" means in
+    // the schema — so a variant-less quick-add (the product grid's
+    // "Add to cart" button, or any product without variants) has to be
+    // looked up with plain field filters instead of the compound key.
+    const existingItem = await prisma.cartItem.findFirst({
       where: {
-        cartId_productId_variantId: {
-          cartId: cart.id,
-          productId: data.productId,
-          variantId: data.variantId ?? null,
-        } as any,
+        cartId: cart.id,
+        productId: data.productId,
+        variantId: data.variantId ?? null,
       },
     });
 

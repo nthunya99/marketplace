@@ -1,4 +1,7 @@
-# Multi-Vendor Marketplace — Phase 1
+# Mmarakeng — multi-vendor marketplace for Lesotho
+
+*Mmarakeng* is Sesotho for "at the market". Live domain: mmarakeng.app.
+Brand assets (logos, icons) live in `public/brand/`; brand constants in `src/lib/brand.ts`.
 
 A real, runnable Next.js 14 + PostgreSQL + Prisma multi-vendor marketplace,
 implementing **Phase 1** of the full specification: authentication & roles,

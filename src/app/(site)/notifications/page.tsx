@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useNotificationCount } from "@/components/NotificationCountProvider";
 
 type Notification = {
   id: string;
@@ -13,39 +14,56 @@ type Notification = {
   createdAt: string;
 };
 
+/**
+ * Opening this page counts as reading everything: the list is loaded
+ * first (so items that were unread keep their "new" highlight for this
+ * visit), then all notifications are marked read and the header badge
+ * drops to zero straight away.
+ */
 export default function NotificationsPage() {
+  const { clearUnread } = useNotificationCount();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const markedRef = useRef(false); // guards against React strict-mode double effects
 
-  function load() {
-    setLoading(true);
-    fetch("/api/notifications")
-      .then((r) => r.json())
-      .then((d) => setNotifications(d.notifications ?? []))
-      .finally(() => setLoading(false));
-  }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/notifications");
+        const d = await res.json();
+        if (cancelled) return;
+        setNotifications(d.notifications ?? []);
 
-  useEffect(load, []);
-
-  async function markRead(id: string) {
-    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
-    load();
-  }
-
-  async function markAllRead() {
-    await fetch("/api/notifications/read-all", { method: "POST" });
-    load();
-  }
+        if ((d.unreadCount ?? 0) > 0 && !markedRef.current) {
+          markedRef.current = true;
+          clearUnread();
+          await fetch("/api/notifications/read-all", { method: "POST" });
+        } else {
+          clearUnread();
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clearUnread]);
 
   if (loading) return <p className="text-ink-muted">Loading…</p>;
 
+  const newCount = notifications.filter((n) => !n.isRead).length;
+
   return (
     <div className="max-w-2xl">
-      <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+      <div className="mb-4">
         <h1 className="font-display text-2xl text-ink">Notifications</h1>
-        <button className="btn-secondary" onClick={markAllRead}>
-          Mark all as read
-        </button>
+        {newCount > 0 && (
+          <p className="text-sm text-ink-muted">
+            {newCount} new since your last visit — highlighted below.
+          </p>
+        )}
       </div>
 
       {notifications.length === 0 ? (
@@ -54,16 +72,13 @@ export default function NotificationsPage() {
         <div className="card divide-y">
           {notifications.map((n) => {
             const content = (
-              <div
-                className={`p-4 flex justify-between gap-4 ${!n.isRead ? "bg-brand-light" : ""}`}
-                onClick={() => !n.isRead && markRead(n.id)}
-              >
+              <div className={`p-4 flex justify-between gap-4 ${!n.isRead ? "bg-brand-light" : ""}`}>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">{n.title}</p>
                   <p className="text-sm text-ink-muted">{n.message}</p>
                   <p className="text-xs text-ink-faint mt-1">{new Date(n.createdAt).toLocaleString()}</p>
                 </div>
-                {!n.isRead && <span className="w-2 h-2 rounded-full bg-brand h-fit mt-1 flex-shrink-0" />}
+                {!n.isRead && <span className="w-2 h-2 rounded-full bg-brand h-fit mt-1 flex-shrink-0" aria-label="New" />}
               </div>
             );
             return n.linkUrl ? (
@@ -71,9 +86,7 @@ export default function NotificationsPage() {
                 {content}
               </Link>
             ) : (
-              <div key={n.id} className="cursor-pointer">
-                {content}
-              </div>
+              <div key={n.id}>{content}</div>
             );
           })}
         </div>

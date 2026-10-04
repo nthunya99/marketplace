@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Dashboard = {
-  wallet: { pendingBalance: string; availableBalance: string; totalEarnings: string; totalCommission: string; totalWithdrawn: string } | null;
+  wallet: { pendingBalance: string; availableBalance: string; totalEarnings: string; totalCommission: string; totalWithdrawn: string; commissionOwed?: string } | null;
 };
 
 type Payout = {
@@ -64,6 +64,9 @@ export default function VendorWalletPage() {
         <Stat label="Total earnings" value={dashboard.wallet?.totalEarnings ?? "0.00"} />
         <Stat label="Total commission paid" value={dashboard.wallet?.totalCommission ?? "0.00"} />
         <Stat label="Total withdrawn" value={dashboard.wallet?.totalWithdrawn ?? "0.00"} />
+        {Number(dashboard.wallet?.commissionOwed ?? 0) > 0 && (
+          <Stat label="Commission owed (M-Pesa sales)" value={dashboard.wallet!.commissionOwed!} />
+        )}
       </div>
 
       <form onSubmit={requestPayout} className="card p-4 mb-6 flex gap-2 items-end">

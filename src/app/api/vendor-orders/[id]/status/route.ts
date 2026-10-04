@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth-utils";
 import { vendorOrderStatusSchema } from "@/lib/validators";
 import { handleApiError, BusinessError } from "@/lib/api-utils";
 import { notify } from "@/lib/notifications";
+import { isDirectPaymentMethod } from "@/lib/commission";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
@@ -42,6 +43,41 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       throw new BusinessError(`Cannot move an order from ${vendorOrder.status} to ${status}.`);
     }
 
+    // A manual-payment order can only leave PENDING via a confirmed proof
+    // of payment (see /api/vendor-orders/[id]/proof/[proofId]/confirm),
+    // which is also what credits the vendor's wallet. Allowing it here
+    // too would let a vendor (or admin) mark an order CONFIRMED without
+    // that credit ever happening — silently breaking the wallet ledger.
+    if (
+      vendorOrder.paymentMethod === "manual" &&
+      vendorOrder.status === "PENDING" &&
+      status === "CONFIRMED"
+    ) {
+      throw new BusinessError(
+        "This is a manual-payment order — confirm it by reviewing the customer's uploaded proof of payment, not by changing status directly."
+      );
+    }
+
+    // An order the customer hasn't chosen a payment method for yet has
+    // nothing to confirm against.
+    if (vendorOrder.paymentMethod === "unselected" && vendorOrder.status === "PENDING" && status === "CONFIRMED") {
+      throw new BusinessError(
+        "The customer hasn't paid for this order yet — it confirms once their payment is received."
+      );
+    }
+
+    // Same rule for M-Pesa: the order confirms itself when the payment
+    // succeeds, which is also what records the commission owed.
+    if (
+      (vendorOrder.paymentMethod === "mpesa" || vendorOrder.paymentMethod === "mopay") &&
+      vendorOrder.status === "PENDING" &&
+      status === "CONFIRMED"
+    ) {
+      throw new BusinessError(
+        "This order is paid online — it confirms automatically when the customer's payment goes through."
+      );
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.vendorOrder.update({
         where: { id: params.id },
@@ -52,7 +88,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         },
       });
 
-      if (status === "DELIVERED" && vendorOrder.status !== "DELIVERED") {
+      // Direct payments (vendor already holds the money) never entered
+      // pendingBalance, so there is nothing to release on delivery.
+      if (
+        status === "DELIVERED" &&
+        vendorOrder.status !== "DELIVERED" &&
+        !isDirectPaymentMethod(vendorOrder.paymentMethod)
+      ) {
         await tx.vendorWallet.update({
           where: { vendorId: vendorOrder.vendorId },
           data: {

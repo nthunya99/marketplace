@@ -41,14 +41,24 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       create: { userId: user.id },
     });
 
+    // Same nullable-compound-key limitation as /api/cart/items — upsert's
+    // `where` can't take an explicit null for variantId at runtime, so
+    // resolve whether the cart item already exists first, then run a
+    // plain update-or-create in the transaction instead of an upsert on
+    // the compound unique key.
+    const existingCartItem = await prisma.cartItem.findFirst({
+      where: { cartId: cart.id, productId: item.productId, variantId: null },
+    });
+
     await prisma.$transaction([
-      prisma.cartItem.upsert({
-        where: {
-          cartId_productId_variantId: { cartId: cart.id, productId: item.productId, variantId: null } as any,
-        },
-        update: { quantity: { increment: 1 } },
-        create: { cartId: cart.id, productId: item.productId, quantity: 1 },
-      }),
+      existingCartItem
+        ? prisma.cartItem.update({
+            where: { id: existingCartItem.id },
+            data: { quantity: { increment: 1 } },
+          })
+        : prisma.cartItem.create({
+            data: { cartId: cart.id, productId: item.productId, quantity: 1 },
+          }),
       prisma.wishlistItem.delete({ where: { id: params.id } }),
     ]);
 

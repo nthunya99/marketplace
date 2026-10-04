@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64.0 64.0" width="64" height="64" role="img" aria-label="Mmarakeng"><defs>
+    <linearGradient id="c" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1B7752"/><stop offset="1" stop-color="#0F5C42"/></linearGradient>
+    <linearGradient id="b" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0E5239"/><stop offset="1" stop-color="#0A4230"/></linearGradient>
+  </defs>
+  <path fill="#0E5239" d="M8.8 32h3.8v17H8.8zM51.4 32h3.8v17h-3.8z"/>
+  <path fill="url(#c)" d="M32 1.6C33.6 1.6 34 3 35 4.6C36.8 7.4 40.5 9 45 11.2C53.5 15.4 58.6 21.5 59.4 30.5C59.8 34.6 58.2 37.6 54.6 37.8C51 38 48.6 36 46.2 33.8C45.6 37 43.2 39.4 40 39.4C36.6 39.4 34 37.2 32 34.6C30 37.2 27.4 39.4 24 39.4C20.8 39.4 18.4 37 17.8 33.8C15.4 36 13 38 9.4 37.8C5.8 37.6 4.2 34.6 4.6 30.5C5.4 21.5 10.5 15.4 19 11.2C23.5 9 27.2 7.4 29 4.6C30 3 30.4 1.6 32 1.6Z"/>
+  <rect x="6" y="48" width="52" height="15" fill="url(#b)"/>
+  <path fill="#EE9330" d="M32 29.6C33.8 32.2 35.3 34.4 35.3 36.4A3.3 3.3 0 0 1 28.7 36.4C28.7 34.4 30.2 32.2 32 29.6Z"/>
+</svg>

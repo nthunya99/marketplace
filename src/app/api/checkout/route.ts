@@ -4,10 +4,10 @@ import { requireRole } from "@/lib/auth-utils";
 import { checkoutWithExtrasSchema } from "@/lib/validators";
 import { handleApiError, BusinessError, generateOrderNumber } from "@/lib/api-utils";
 import { resolveCommissionPercent, calculateCommission } from "@/lib/commission";
-import { getPaymentProvider } from "@/lib/payment";
 import { notify } from "@/lib/notifications";
 import { validateAndPriceCoupon, type EligibleLine } from "@/lib/coupons";
-import { priceLoyaltyRedemption, earnLoyaltyPoints, redeemLoyaltyPoints } from "@/lib/loyalty";
+import { priceLoyaltyRedemption, redeemLoyaltyPoints } from "@/lib/loyalty";
+import { availablePaymentMethods } from "@/lib/vendor-payment-methods";
 import { scoreOrderForFraud } from "@/lib/fraud";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -16,27 +16,26 @@ import { Decimal } from "@prisma/client/runtime/library";
  *
  *   cart (possibly multiple vendors)
  *     -> validate stock & re-price server-side (never trust client prices)
+ *     -> check every vendor in the cart can actually take payment
  *     -> apply an optional coupon and/or loyalty point redemption
  *     -> create parent Order
  *     -> split into one VendorOrder per vendor
  *     -> decrement inventory
- *     -> calculate commission per vendor order (on the pre-discount
- *        subtotal — see the Coupon model's doc comment on who funds a
- *        coupon's discount)
- *     -> charge payment for the discounted total
- *     -> on success: credit vendor pending balances, award loyalty points
- *        on the amount actually paid, mark order CONFIRMED
- *     -> on failure: roll back everything (order left in a FAILED payment
- *        state with stock un-decremented, coupon usage not recorded)
+ *     -> calculate commission per vendor order
  *
- * Everything from "create parent Order" through "decrement inventory" and
- * "calculate commission" happens inside a single DB transaction so the
- * marketplace can never end up with an order that has no matching stock
- * decrement, or a vendor order with no commission record. The payment
- * charge itself happens inside the same transaction call using the
- * already-computed, server-trusted total — so a client can never
- * manipulate price, stock, commission, coupon discount, or loyalty value
- * (spec section 25).
+ * Checkout no longer takes a payment method. Every vendor order is created
+ * PENDING with paymentMethod "unselected"; on the order page the customer
+ * picks how to pay each seller from the methods that seller offers (their
+ * registration choice: offline + proof, or their own merchant API) — see
+ * POST /api/vendor-orders/[id]/payment-method. Wallet/commission effects
+ * and loyalty points happen when each payment is confirmed, exactly as
+ * before for manual, M-Pesa and MoPay. Fraud scoring runs here, at order
+ * placement: it only feeds the admin review queue and never blocks.
+ *
+ * Everything happens inside one DB transaction, so the marketplace can
+ * never end up with an order that has no matching stock decrement or
+ * commission record. A client can never manipulate price, stock,
+ * commission, coupon discount, or loyalty value (spec section 25).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -68,7 +67,6 @@ export async function POST(req: NextRequest) {
       throw new BusinessError("Your cart is empty.");
     }
 
-
     // ---- Re-validate & re-price every line server-side ----
     for (const item of cart.items) {
       if (item.product.status !== "PUBLISHED") {
@@ -83,6 +81,11 @@ export async function POST(req: NextRequest) {
           `Only ${availableStock} unit(s) of "${item.product.name}" are in stock.`
         );
       }
+      if (availablePaymentMethods(item.product.vendor).length === 0) {
+        throw new BusinessError(
+          `"${item.product.vendor.storeName}" isn't taking payments right now, so their items can't be ordered. Please remove them from your cart to continue.`
+        );
+      }
     }
 
     // Group cart items by vendor.
@@ -93,17 +96,6 @@ export async function POST(req: NextRequest) {
       byVendor.set(item.product.vendorId, list);
     }
 
-    const paymentProvider = getPaymentProvider();
-
-    // NOTE on production hardening: this wraps the payment gateway call
-    // inside the DB transaction so stock/commission/payment always land
-    // atomically together (simplest correct option for Phase 1, and the
-    // mock provider is effectively instant). For a real gateway with
-    // higher latency, split this into (1) reserve stock + create order in
-    // PENDING, (2) call the gateway outside any transaction, (3) a short
-    // follow-up transaction that confirms or releases the reservation
-    // based on the gateway result/webhook — the interface in
-    // src/lib/payment stays the same either way.
     const result = await prisma.$transaction(async (tx) => {
       let orderSubtotal = new Decimal(0);
 
@@ -181,20 +173,13 @@ export async function POST(req: NextRequest) {
         vendorOrderInputs.push({ vendorId, subtotal: vendorSubtotal, items: orderItemsData });
       }
 
-      // Shipping: look up each vendor's default active method before
-      // creating the order, so the order's shippingTotal is correct from
-      // the start.
-      const shippingByVendor = new Map<string, { id: string; cost: Decimal } | null>();
-      for (const vo of vendorOrderInputs) {
-        const method = await tx.shippingMethod.findFirst({
-          where: { vendorId: vo.vendorId, isActive: true, isDefault: true },
-        });
-        shippingByVendor.set(vo.vendorId, method ? { id: method.id, cost: method.cost } : null);
-      }
-      const shippingTotal = Array.from(shippingByVendor.values()).reduce(
-        (sum, m) => sum.add(m?.cost ?? new Decimal(0)),
-        new Decimal(0)
-      );
+      // Shipping cost isn't charged yet — the courier/delivery system is
+      // still being built (see src/lib/courier), so every order is
+      // priced at $0 shipping for now rather than quoting a cost nothing
+      // can actually fulfill. shippingTotal/shippingCost stay on the
+      // schema so switching this back on later is a pricing change, not
+      // a data-model change.
+      const shippingTotal = new Decimal(0);
 
       // Tax is a flat-zero placeholder (tax jurisdictions are a Phase 4
       // feature per the spec's own phasing) — the field exists on Order
@@ -250,7 +235,6 @@ export async function POST(req: NextRequest) {
         const vendor = await tx.vendorProfile.findUniqueOrThrow({ where: { id: vo.vendorId } });
         const commissionPercent = await resolveCommissionPercent(tx, vendor);
         const { commissionAmount, vendorEarnings } = calculateCommission(vo.subtotal, commissionPercent);
-        const shipping = shippingByVendor.get(vo.vendorId);
 
         const vendorOrder = await tx.vendorOrder.create({
           data: {
@@ -260,96 +244,46 @@ export async function POST(req: NextRequest) {
             commissionPercent,
             commissionAmount,
             vendorEarnings,
-            shippingMethodId: shipping?.id,
-            shippingCost: shipping?.cost ?? new Decimal(0),
+            shippingCost: new Decimal(0),
             status: "PENDING",
+            paymentMethod: "unselected",
             items: { create: vo.items },
           },
         });
         vendorOrders.push(vendorOrder);
       }
 
-      // ---- Payment ----
-      const chargeResult = await paymentProvider.charge({
-        orderId: order.id,
-        amount: Number(grandTotal),
-        currency: process.env.PLATFORM_CURRENCY ?? "LSL",
-        customerEmail: user.email,
-      });
-
-      const payment = await tx.payment.create({
-        data: {
-          orderId: order.id,
-          provider: paymentProvider.name,
-          providerRef: chargeResult.providerRef,
-          amount: grandTotal,
-          currency: process.env.PLATFORM_CURRENCY ?? "LSL",
-          status: chargeResult.status,
-          transactions: {
-            create: {
-              type: "charge",
-              amount: grandTotal,
-              status: chargeResult.status,
-              metaJson: { providerRef: chargeResult.providerRef },
-            },
-          },
-        },
-      });
-
-      if (!chargeResult.success) {
-        // Rolling back the whole transaction (including stock decrements
-        // and vendor order creation) is exactly right here: a failed
-        // charge means this purchase never happened.
-        throw new BusinessError(
-          chargeResult.failureReason ?? "Payment failed. Your card was not charged."
-        );
-      }
-
-      // Payment succeeded: confirm the order and credit each vendor's
-      // *pending* balance (funds become "available" only once the order
-      // is delivered — spec section 10 — that transition is handled by
-      // the order-status-update route).
-      await tx.order.update({ where: { id: order.id }, data: { status: "CONFIRMED" } });
-      for (const vendorOrder of vendorOrders) {
-        await tx.vendorOrder.update({ where: { id: vendorOrder.id }, data: { status: "CONFIRMED" } });
-        await tx.vendorWallet.upsert({
-          where: { vendorId: vendorOrder.vendorId },
-          update: {
-            pendingBalance: { increment: vendorOrder.vendorEarnings },
-            totalEarnings: { increment: vendorOrder.vendorEarnings },
-            totalCommission: { increment: vendorOrder.commissionAmount },
-          },
-          create: {
-            vendorId: vendorOrder.vendorId,
-            pendingBalance: vendorOrder.vendorEarnings,
-            totalEarnings: vendorOrder.vendorEarnings,
-            totalCommission: vendorOrder.commissionAmount,
-          },
-        });
-      }
-
-      // Record the coupon redemption (and bump its usage counter) only
-      // once payment has actually succeeded.
+      // Coupon usage and any point spend are locked in the moment the
+      // order is placed, regardless of payment method — placing an order
+      // with a code consumes it even before payment completes, same as
+      // most checkout flows.
       if (appliedCoupon) {
         await tx.couponRedemption.create({
           data: { couponId: appliedCoupon.id, userId: user.id, orderId: order.id, amount: couponDiscount },
         });
         await tx.coupon.update({ where: { id: appliedCoupon.id }, data: { usageCount: { increment: 1 } } });
       }
-
-      // Loyalty: redeem any points spent, then award points earned on the
-      // amount actually paid (spec section 23).
       if (loyaltyResult.pointsToRedeem > 0) {
         await redeemLoyaltyPoints(tx, user.id, loyaltyResult.pointsToRedeem, order.id);
       }
-      const pointsEarned = await earnLoyaltyPoints(tx, user.id, grandTotal, order.id);
-      if (pointsEarned > 0) {
-        await tx.order.update({ where: { id: order.id }, data: { loyaltyPointsEarned: pointsEarned } });
-      }
 
-      // Rule-based fraud scoring (spec section 25/37) — runs after
-      // payment succeeds, purely for the admin review queue; it never
-      // blocks or reverses an already-successful purchase.
+      // Nothing is paid at checkout. The order-level Payment row tracks the
+      // whole order's payment state; each seller is paid separately
+      // ("direct") and the row flips to CONFIRMED once every vendor order
+      // has been paid (see confirmDirectVendorOrderPayment and the proof
+      // confirm route).
+      const payment = await tx.payment.create({
+        data: {
+          orderId: order.id,
+          provider: "direct",
+          amount: grandTotal,
+          currency: process.env.PLATFORM_CURRENCY ?? "LSL",
+          status: "INITIATED",
+        },
+      });
+
+      // Rule-based fraud scoring (spec section 25/37) — purely for the
+      // admin review queue; it never blocks the order.
       const customerRecord = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
       const fraudResult = await scoreOrderForFraud(tx, {
         userId: user.id,
@@ -363,15 +297,16 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Empty the cart now that checkout succeeded.
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
 
-      // Notify the customer and every involved vendor (spec section 17).
+      const sellerCount = vendorOrders.length;
       await notify(tx, {
         userId: user.id,
         type: "ORDER_STATUS",
-        title: "Order placed",
-        message: `Your order ${order.orderNumber} has been placed and payment confirmed.`,
+        title: "Order placed — choose how to pay",
+        message: `Your order ${order.orderNumber} has been placed. Open it to choose how to pay ${
+          sellerCount > 1 ? `each of the ${sellerCount} sellers` : "the seller"
+        }.`,
         linkUrl: `/orders/${order.id}`,
       });
       for (const vendorOrder of vendorOrders) {
@@ -379,8 +314,8 @@ export async function POST(req: NextRequest) {
         await notify(tx, {
           userId: vendor.userId,
           type: "ORDER_STATUS",
-          title: "New order received",
-          message: `You have a new order (${order.orderNumber}) worth ${vendorOrder.subtotal}.`,
+          title: "New order awaiting payment",
+          message: `You have a new order (${order.orderNumber}) worth ${vendorOrder.subtotal}. It's waiting for the customer to pay you.`,
           linkUrl: "/vendor/orders",
         });
       }

@@ -67,8 +67,8 @@ export default function VendorCouponsPage() {
     <div className="max-w-2xl">
       <h1 className="text-xl font-bold mb-2">Coupons</h1>
       <p className="text-sm text-gray-500 mb-4">
-        Coupons you create apply only to your own products. The discount is funded by the
-        marketplace — your commission and payout are unaffected.
+        Coupons you create apply only to your own products. The discount is funded by
+        Mmarakeng — your commission and payout are unaffected.
       </p>
 
       <form onSubmit={create} className="card p-4 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">

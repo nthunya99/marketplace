@@ -7,7 +7,7 @@ async function main() {
   await prisma.platformSettings.upsert({
     where: { id: "singleton" },
     update: {},
-    create: { id: "singleton", marketplaceName: "Marketplace", defaultCommission: 10, currency: "LSL" },
+    create: { id: "singleton", marketplaceName: "Mmarakeng", defaultCommission: 10, currency: "LSL" },
   });
 
   const adminPassword = await bcrypt.hash("Admin123!", 12);
@@ -51,6 +51,12 @@ async function main() {
           storeDescription: "A seeded demo vendor, pre-approved for local testing.",
           status: "APPROVED",
           isVerified: true,
+          acceptsManualPayment: true,
+          bankName: "Demo Bank",
+          bankAccountName: "Demo Store (Pty) Ltd",
+          bankAccountNumber: "1234567890",
+          mpesaMerchantNumber: "174379",
+          ecocashMerchantNumber: "0771234567",
           wallet: { create: {} },
         },
       },
@@ -75,6 +81,30 @@ async function main() {
     update: {},
     create: { name: "Clothing", slug: "clothing" },
   });
+
+  // A wider spread of top-level categories so the header, homepage grid,
+  // and category chips reflect an established, many-department
+  // marketplace rather than a two-category demo store.
+  const moreCategories = [
+    { name: "Home, Garden & Groceries", slug: "home-garden-groceries" },
+    { name: "Toys, Baby & Kids", slug: "toys-baby-kids" },
+    { name: "Fashion & Jewellery", slug: "fashion-jewellery" },
+    { name: "Sports & Health", slug: "sports-health" },
+    { name: "Beauty & Personal Care", slug: "beauty-personal-care" },
+    { name: "Books, Music & Media", slug: "books-music-media" },
+    { name: "Automotive", slug: "automotive" },
+    { name: "Collectables & Hobbies", slug: "collectables-hobbies" },
+    { name: "Business & Industry", slug: "business-industry" },
+    { name: "Pet Supplies", slug: "pet-supplies" },
+  ];
+  for (let i = 0; i < moreCategories.length; i++) {
+    const c = moreCategories[i];
+    await prisma.category.upsert({
+      where: { slug: c.slug },
+      update: {},
+      create: { name: c.name, slug: c.slug, sortOrder: i + 2 },
+    });
+  }
 
   if (vendorUser.vendorProfile) {
     await prisma.shippingMethod.upsert({

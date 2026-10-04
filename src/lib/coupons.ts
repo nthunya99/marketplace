@@ -38,7 +38,20 @@ export async function validateAndPriceCoupon(
     }
   }
 
+  // A vendor can opt their whole store out of coupons (see
+  // VendorProfile.participatesInCoupons) — this applies regardless of
+  // whether the coupon is vendor-scoped or platform-wide, since it's the
+  // vendor's own choice not to discount their listings, not a property
+  // of any particular coupon.
+  const vendorIds = Array.from(new Set(lines.map((l) => l.vendorId)));
+  const vendors = await tx.vendorProfile.findMany({
+    where: { id: { in: vendorIds } },
+    select: { id: true, participatesInCoupons: true },
+  });
+  const participatingVendorIds = new Set(vendors.filter((v) => v.participatesInCoupons).map((v) => v.id));
+
   const eligibleLines = lines.filter((line) => {
+    if (!participatingVendorIds.has(line.vendorId)) return false;
     if (coupon.scope === "VENDOR" && coupon.vendorId && line.vendorId !== coupon.vendorId) return false;
     if (coupon.categoryId && line.categoryId !== coupon.categoryId) return false;
     if (coupon.productId && line.productId !== coupon.productId) return false;

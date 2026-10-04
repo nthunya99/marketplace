@@ -34,6 +34,7 @@ export async function GET() {
         include: {
           items: true,
           order: { select: { orderNumber: true, createdAt: true, customer: { select: { name: true } } } },
+          proofOfPayments: { orderBy: { submittedAt: "desc" } },
         },
       });
       return NextResponse.json(vendorOrders);

@@ -11,9 +11,7 @@ body {
   color: theme("colors.brand.dark");
 }
 
-h1,
-h2,
-h3 {
+h1, h2, h3 {
   letter-spacing: -0.01em;
 }
 
@@ -75,6 +73,35 @@ h3 {
   }
   .badge-accent {
     @apply badge bg-accent-light text-accent-dark;
+  }
+  .badge-sale {
+    @apply badge bg-sale text-white;
+  }
+  .badge-trust {
+    @apply badge bg-trust-light text-trust-dark;
+  }
+  .badge-sun {
+    @apply badge bg-sun-light text-sun-dark;
+  }
+
+  /* ---- Icon buttons with a count bubble (header cart/wishlist) ---- */
+  .icon-btn {
+    @apply relative inline-flex items-center justify-center w-10 h-10 rounded-full text-white/90
+      hover:bg-white/10 transition-colors duration-150;
+  }
+  .icon-btn-count {
+    @apply absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full
+      bg-sun text-brand-dark text-[10px] font-bold leading-none shadow-sm;
+  }
+
+  /* ---- Small square action button used on product cards (add to cart /
+     wishlist) so they don't compete visually with the card's own link. ---- */
+  .card-action-btn {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-ink shadow-card
+      border border-ink/10 transition-colors duration-150 hover:border-brand hover:text-brand;
+  }
+  .card-action-btn.is-active {
+    @apply text-sale border-sale/40;
   }
 
   /* Pill-shaped filter/category chip. Selected state uses brand fill;

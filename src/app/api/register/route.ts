@@ -47,6 +47,21 @@ export async function POST(req: NextRequest) {
               contactEmail: data.contactEmail,
               contactPhone: data.contactPhone,
               status: "PENDING",
+              // How customers will pay this store (see registerVendorSchema).
+              // MANUAL stores are ready to take orders the moment they're
+              // approved; ONLINE stores connect their merchant API first.
+              paymentMode: data.paymentMode,
+              ...(data.paymentMode === "MANUAL"
+                ? {
+                    acceptsManualPayment: true,
+                    bankName: data.bankName,
+                    bankAccountName: data.bankAccountName,
+                    bankAccountNumber: data.bankAccountNumber,
+                    mpesaMerchantNumber: data.mpesaMerchantNumber,
+                    ecocashMerchantNumber: data.ecocashMerchantNumber,
+                    mobileMoneyAccountType: data.mobileMoneyAccountType,
+                  }
+                : {}),
               wallet: { create: {} },
             },
           },
@@ -60,7 +75,11 @@ export async function POST(req: NextRequest) {
           email: user.email,
           role: user.role,
           vendorStatus: user.vendorProfile?.status,
-          message: "Vendor account created. It is pending admin approval before you can list products.",
+          paymentMode: data.paymentMode,
+          message:
+            data.paymentMode === "ONLINE"
+              ? "Vendor account created and pending admin approval. Log in and open Seller centre → Payments to enter your merchant number and API credentials — customers can pay you once they're connected."
+              : "Vendor account created. It is pending admin approval before you can list products.",
         },
         { status: 201 }
       );

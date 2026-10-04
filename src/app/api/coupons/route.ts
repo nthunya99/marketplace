@@ -36,6 +36,15 @@ export async function POST(req: NextRequest) {
       throw new BusinessError("A percentage discount cannot exceed 100.");
     }
 
+    if (user.role === "VENDOR") {
+      const vendor = await prisma.vendorProfile.findUniqueOrThrow({ where: { id: user.vendorId! } });
+      if (!vendor.participatesInCoupons) {
+        throw new BusinessError(
+          "Coupons are turned off for your store. Enable them in Store Settings first."
+        );
+      }
+    }
+
     const existing = await prisma.coupon.findUnique({ where: { code: data.code.toUpperCase() } });
     if (existing) throw new BusinessError("A coupon with this code already exists.");
 

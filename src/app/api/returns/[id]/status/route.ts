@@ -7,6 +7,9 @@ import { notify } from "@/lib/notifications";
 import { getPaymentProvider } from "@/lib/payment";
 import { recordAudit } from "@/lib/audit";
 import { Decimal } from "@prisma/client/runtime/library";
+import { isDirectPaymentMethod } from "@/lib/commission";
+import { reversal, describeResponse, MpesaError } from "@/lib/mpesa/client";
+import { vendorMpesaCredentials } from "@/lib/mpesa/vendor";
 
 const ALLOWED: Record<string, string[]> = {
   REQUESTED: ["UNDER_REVIEW", "APPROVED", "REJECTED"],
@@ -72,6 +75,42 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
+    // M-Pesa orders were paid into the vendor's own M-Pesa account, so the
+    // refund is a reversal through the vendor's connection. It runs before
+    // the DB transaction (it's an external call); if it fails, nothing is
+    // marked refunded and the vendor sees why.
+    let mpesaReversal: { txnId: string; transactionId: string } | null = null;
+    if (finalRefundAmount && existing.vendorOrder.paymentMethod === "mpesa") {
+      const paid = await prisma.mpesaTransaction.findFirst({
+        where: { vendorOrderId: existing.vendorOrderId, status: "SUCCESS" },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!paid?.mpesaTransactionId) {
+        throw new BusinessError("Couldn't find the M-Pesa payment for this order to reverse. Refund the customer directly and contact support.");
+      }
+      try {
+        const result = await reversal(vendorMpesaCredentials(existing.vendorOrder.vendor), {
+          transactionId: paid.mpesaTransactionId,
+          amount: finalRefundAmount.toFixed(2),
+        });
+        if (!result.ok) {
+          throw new BusinessError(`M-Pesa refused the reversal: ${describeResponse(result.responseCode, result.responseDesc)}`);
+        }
+      } catch (e) {
+        if (e instanceof MpesaError) throw new BusinessError(`M-Pesa reversal failed: ${e.message}`);
+        throw e;
+      }
+      const reversed = new Decimal(paid.reversedAmount).add(finalRefundAmount);
+      await prisma.mpesaTransaction.update({
+        where: { id: paid.id },
+        data: {
+          reversedAmount: reversed,
+          status: reversed.greaterThanOrEqualTo(paid.amount) ? "REVERSED" : "SUCCESS",
+        },
+      });
+      mpesaReversal = { txnId: paid.id, transactionId: paid.mpesaTransactionId };
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       const returnRequest = await tx.returnRequest.update({
         where: { id: params.id },
@@ -113,14 +152,48 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         // Reverse the vendor's wallet + the platform's recorded commission.
         // The order was DELIVERED to reach this point, so the vendor's
         // earnings for it are in `availableBalance`, not `pendingBalance`.
+        // For direct payments (M-Pesa to the vendor) the earnings were never
+        // in availableBalance; the refunded share of commission is simply no
+        // longer owed.
         await tx.vendorWallet.update({
           where: { vendorId: vendorOrder.vendorId },
-          data: {
-            availableBalance: { decrement: vendorPortion },
-            totalEarnings: { decrement: vendorPortion },
-            totalCommission: { decrement: commissionPortion },
-          },
+          data: isDirectPaymentMethod(vendorOrder.paymentMethod)
+            ? {
+                totalEarnings: { decrement: vendorPortion },
+                totalCommission: { decrement: commissionPortion },
+                commissionOwed: { decrement: commissionPortion },
+              }
+            : {
+                availableBalance: { decrement: vendorPortion },
+                totalEarnings: { decrement: vendorPortion },
+                totalCommission: { decrement: commissionPortion },
+              },
         });
+
+        // MoPay has no refund API: the vendor refunds the customer from
+        // their MoPay/mobile money account themselves, and marking the
+        // return REFUNDED records that they've done so.
+        if (vendorOrder.paymentMethod === "mopay") {
+          await recordAudit(tx, {
+            actorId: user.id,
+            actorEmail: user.email,
+            action: "REFUND_RECORDED_PAID_OUTSIDE_PLATFORM",
+            entityType: "VendorOrder",
+            entityId: vendorOrder.id,
+            newValue: { amount: finalRefundAmount.toString(), returnRequestId: returnRequest.id, method: "mopay" },
+          });
+        }
+
+        if (mpesaReversal) {
+          await recordAudit(tx, {
+            actorId: user.id,
+            actorEmail: user.email,
+            action: "MPESA_REVERSAL",
+            entityType: "VendorOrder",
+            entityId: vendorOrder.id,
+            newValue: { ...mpesaReversal, amount: finalRefundAmount.toString(), returnRequestId: returnRequest.id },
+          });
+        }
 
         await tx.vendorOrder.update({
           where: { id: vendorOrder.id },

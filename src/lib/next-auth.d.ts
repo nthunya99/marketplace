@@ -27,5 +27,9 @@ declare module "next-auth/jwt" {
     role: Role;
     vendorStatus?: string | null;
     vendorId?: string | null;
+    /** When role/vendor fields were last re-read from the database (ms). */
+    refreshedAt?: number;
+    /** Set when the account no longer exists; the session counts as signed out. */
+    revoked?: boolean;
   }
 }

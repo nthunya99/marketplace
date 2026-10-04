@@ -48,11 +48,16 @@ export async function GET() {
 
 /**
  * POST /api/conversations — a customer starts (or reuses) a conversation
- * with a vendor, optionally from a specific product page (spec section
- * 16: "customers should be able to start a conversation from a product
- * page"). The (customerId, vendorId, productId) unique constraint means
- * calling this twice for the same context just returns the existing
- * thread rather than creating duplicates.
+ * with a vendor. Messaging is only available once a customer has an
+ * actual relationship with that vendor: a VendorOrder that has moved
+ * past PENDING (i.e. the vendor has confirmed payment, whether that was
+ * instant via card or manual via a reviewed proof of payment). This
+ * replaces the old "message seller from any product page" entry point —
+ * a stranger browsing a listing can no longer message a vendor before
+ * ever buying from them; the thread opens once there's a real order to
+ * talk about. The (customerId, vendorId, productId) unique constraint
+ * means calling this twice for the same context just returns the
+ * existing thread rather than creating duplicates.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -62,17 +67,32 @@ export async function POST(req: NextRequest) {
     const vendor = await prisma.vendorProfile.findUnique({ where: { id: vendorId } });
     if (!vendor) throw new BusinessError("Vendor not found");
 
-    const conversation = await prisma.conversation.upsert({
+    const confirmedOrder = await prisma.vendorOrder.findFirst({
       where: {
-        customerId_vendorId_productId: {
-          customerId: user.id,
-          vendorId,
-          productId: productId ?? null,
-        } as any,
+        vendorId,
+        status: { in: ["CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "REFUNDED", "PARTIALLY_REFUNDED"] },
+        order: { customerId: user.id },
       },
-      update: {},
-      create: { customerId: user.id, vendorId, productId },
     });
+    if (!confirmedOrder) {
+      throw new BusinessError(
+        "You can message a seller once you have a confirmed order with them."
+      );
+    }
+
+    // Same nullable-compound-key limitation as cart items (see that
+    // route's comment): upsert's `where` can't take an explicit null for
+    // productId at runtime, so look the conversation up with plain field
+    // filters and create it only if missing, instead of upserting on the
+    // compound unique key.
+    const existing = await prisma.conversation.findFirst({
+      where: { customerId: user.id, vendorId, productId: productId ?? null },
+    });
+    const conversation =
+      existing ??
+      (await prisma.conversation.create({
+        data: { customerId: user.id, vendorId, productId },
+      }));
 
     return NextResponse.json(conversation, { status: 201 });
   } catch (err) {

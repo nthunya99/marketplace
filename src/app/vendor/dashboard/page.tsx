@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 type Dashboard = {
   vendor: { storeName: string; status: string };
@@ -36,37 +35,9 @@ export default function VendorDashboardPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
-        <h1 className="text-xl font-bold">{data.vendor.storeName} — Dashboard</h1>
-        <div className="flex gap-2 flex-wrap">
-          <Link href="/vendor/products" className="btn-secondary">
-            Products
-          </Link>
-          <Link href="/vendor/products/new" className="btn-primary">
-            Add product
-          </Link>
-          <Link href="/vendor/orders" className="btn-secondary">
-            Orders
-          </Link>
-          <Link href="/vendor/returns" className="btn-secondary">
-            Returns
-          </Link>
-          <Link href="/vendor/wallet" className="btn-secondary">
-            Wallet
-          </Link>
-          <Link href="/vendor/shipping" className="btn-secondary">
-            Shipping
-          </Link>
-          <Link href="/vendor/coupons" className="btn-secondary">
-            Coupons
-          </Link>
-          <Link href="/vendor/messages" className="btn-secondary">
-            Messages
-          </Link>
-          <Link href="/vendor/analytics" className="btn-secondary">
-            Analytics
-          </Link>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-xl font-bold">Dashboard</h1>
+        <p className="text-sm text-ink-muted">A snapshot of {data.vendor.storeName}'s sales and balances.</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

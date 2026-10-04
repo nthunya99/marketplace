@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth-utils";
-import { productSchema } from "@/lib/validators";
+import { productCreateSchema } from "@/lib/validators";
+import { productImagePrefix } from "@/lib/uploads";
 import { handleApiError, slugify, BusinessError } from "@/lib/api-utils";
 import type { Prisma } from "@prisma/client";
 
@@ -125,7 +126,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const data = productSchema.parse(await req.json());
+    const data = productCreateSchema.parse(await req.json());
+
+    // Images must be files this vendor uploaded — never another vendor's
+    // files and never an external URL (enforced here, not just in the UI).
+    const ownPrefix = productImagePrefix(vendor.id);
+    if (data.images.some((img) => !img.url.startsWith(ownPrefix))) {
+      throw new BusinessError("One or more images weren't uploaded from your store. Please re-upload them.");
+    }
+
+    if (data.discountPrice !== undefined && data.discountPrice >= data.price) {
+      throw new BusinessError("The sale price must be lower than the regular price.");
+    }
 
     const existingSku = await prisma.product.findUnique({ where: { sku: data.sku } });
     if (existingSku) throw new BusinessError("A product with this SKU already exists.");
@@ -155,9 +167,13 @@ export async function POST(req: NextRequest) {
         brand: data.brand,
         tags: data.tags ?? [],
         status: data.status ?? "DRAFT",
-        images: data.images
-          ? { create: data.images.map((img, i) => ({ ...img, sortOrder: i })) }
-          : undefined,
+        images: {
+          create: data.images.map((img, i) => ({
+            url: img.url,
+            altText: img.altText ?? data.name,
+            sortOrder: i,
+          })),
+        },
         attributes: data.attributes ? { create: data.attributes } : undefined,
         variants: data.variants
           ? {

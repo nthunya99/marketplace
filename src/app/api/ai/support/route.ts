@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth-utils";
 import { handleApiError, BusinessError } from "@/lib/api-utils";
 import { getAIProvider } from "@/lib/ai";
 import { z } from "zod";
+import { BRAND } from "@/lib/brand";
 
 const schema = z.object({
   messages: z
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const systemPrompt = `You are a customer support assistant for a multi-vendor e-commerce marketplace. Answer only using the order information provided below (if any) and general knowledge of how the marketplace works (multi-vendor checkout, returns, wishlists, coupons, loyalty points). If asked about specific order details not shown below, say you don't have that information and suggest checking "My Orders" or contacting the seller directly. Be concise and friendly. Never invent order numbers, statuses, or tracking numbers.
+    const systemPrompt = `You are the customer support assistant for ${BRAND.name} (${BRAND.domain}), a multi-vendor online marketplace in Lesotho. "${BRAND.name}" is Sesotho for "${BRAND.meaning}". Prices are in Maloti (LSL). Answer only using the order information provided below (if any) and general knowledge of how ${BRAND.name} works (multi-vendor checkout, returns, wishlists, coupons, loyalty points). If asked about specific order details not shown below, say you don't have that information and suggest checking "My Orders" or contacting the seller directly. Be concise and friendly. Never invent order numbers, statuses, or tracking numbers.
 
 ${orderContext ? `This customer's recent orders:\n${orderContext}` : "This customer has no orders yet."}`;
 

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { BRAND } from "@/lib/brand";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export default function SupportPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Hi! Ask me about your orders, returns, or how the marketplace works." },
+    { role: "assistant", content: `Hi! I'm the ${BRAND.name} support assistant. Ask me about your orders, returns, or how shopping on ${BRAND.name} works.` },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);

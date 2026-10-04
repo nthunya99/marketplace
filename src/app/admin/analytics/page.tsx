@@ -33,7 +33,7 @@ export default function AdminAnalyticsPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
-        <h1 className="text-xl font-bold">Marketplace Analytics</h1>
+        <h1 className="text-xl font-bold">Mmarakeng Analytics</h1>
         <DateRangeSelect value={range} onChange={setRange} />
       </div>
 
